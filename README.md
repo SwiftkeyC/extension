@@ -147,4 +147,4 @@ Press `F5` in VSCode to launch the Extension Development Host with the extension
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+This extension is provided as-is. All rights reserved by SwiftkeyC.

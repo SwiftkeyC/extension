@@ -3,131 +3,205 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = require("vscode");
-// One "word" = 5 characters (standard WPM definition)
-const CHARS_PER_WORD = 5;
+const WORD_RE = /\w+/g;
 class TypingSpeedMeter {
     constructor() {
-        this.keystrokeTimes = [];
-        this.lastKeystrokeAt = 0;
+        // CPM: char timestamps in sliding window
+        this.charTimes = [];
+        // WPM: word timestamps in sliding window
+        this.wordTimes = [];
+        this.pendingWord = false; // true while mid-word (word chars typed, no boundary yet)
+        // Session stats — persist until explicit reset, survive idle
+        this.sessionWords = 0;
+        this.sessionStart = 0; // timestamp of first completed word
+        this.lastWordTime = 0; // timestamp of last completed word
+        // Idle detection
+        this.lastActivity = 0; // timestamp of any insertion
         this.visible = true;
         this.disposables = [];
-        this.statusBar = vscode.window.createStatusBarItem('typingSpeedMeter', vscode.StatusBarAlignment.Right, 10000 // high priority → far right, near the top-right area
-        );
+        this.statusBar = vscode.window.createStatusBarItem('typingSpeedMeter', vscode.StatusBarAlignment.Right, 10000);
         this.statusBar.name = 'Typing Speed Meter';
         this.statusBar.command = 'typingSpeedMeter.reset';
-        this.statusBar.tooltip = 'Typing speed (click to reset)\nWords per minute over sliding window';
+        this.statusBar.tooltip =
+            'Typing speed — real words counted (not chars/5)\n' +
+                'avg = session total ÷ active span\n' +
+                'Click to reset';
         this.statusBar.show();
         this.disposables.push(vscode.workspace.onDidChangeTextDocument(e => this.onEdit(e)), vscode.commands.registerCommand('typingSpeedMeter.reset', () => this.reset()), vscode.commands.registerCommand('typingSpeedMeter.toggle', () => this.toggle()), vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('typingSpeedMeter')) {
+            if (e.affectsConfiguration('typingSpeedMeter'))
                 this.refresh();
-            }
         }));
-        // Redraw every second even when idle so WPM decays naturally
         this.tickTimer = setInterval(() => this.refresh(), 1000);
         this.refresh();
     }
     cfg() {
         return vscode.workspace.getConfiguration('typingSpeedMeter');
     }
+    recordWord(now) {
+        this.wordTimes.push(now);
+        this.sessionWords++;
+        this.lastWordTime = now;
+        if (this.sessionStart === 0)
+            this.sessionStart = now;
+    }
     onEdit(event) {
-        // Ignore output / git / SCM virtual documents
-        if (event.document.uri.scheme !== 'file' && event.document.uri.scheme !== 'untitled') {
+        if (event.document.uri.scheme !== 'file' && event.document.uri.scheme !== 'untitled')
             return;
-        }
         const now = Date.now();
-        let addedChars = 0;
+        this.lastActivity = now;
         for (const change of event.contentChanges) {
-            // Only count characters actually inserted (not deletions)
-            addedChars += change.text.length;
-        }
-        if (addedChars > 0) {
-            // Push one timestamp per character typed
-            for (let i = 0; i < addedChars; i++) {
-                this.keystrokeTimes.push(now);
+            const text = change.text;
+            if (text.length === 0)
+                continue; // pure deletion
+            // CPM: one timestamp per inserted character
+            for (let i = 0; i < text.length; i++)
+                this.charTimes.push(now);
+            if (text.length === 1) {
+                // Single keystroke: track word boundaries
+                if (/\w/.test(text)) {
+                    // Word character — building a word
+                    this.pendingWord = true;
+                }
+                else if (this.pendingWord) {
+                    // Non-word character (space, (, ;, =, …) — word just finished
+                    this.recordWord(now);
+                    this.pendingWord = false;
+                }
             }
-            this.lastKeystrokeAt = now;
-            this.refresh();
+            else {
+                // Multi-char insertion (paste, autocomplete, snippet)
+                if (/[\r\n]/.test(text)) {
+                    // Newline present (Enter + indent, snippet, Copilot multi-line):
+                    // treat as a word boundary — commit the pending word but don't
+                    // count all the inserted tokens, which would inflate WPM on
+                    // every autocomplete or snippet acceptance.
+                    if (this.pendingWord) {
+                        this.recordWord(now);
+                        this.pendingWord = false;
+                    }
+                    this.pendingWord = /\w$/.test(text);
+                }
+                else {
+                    // Single-line paste or autocomplete — count every \w+ token
+                    const tokens = text.match(WORD_RE) ?? [];
+                    for (const _ of tokens)
+                        this.recordWord(now);
+                    this.pendingWord = /\w$/.test(text);
+                }
+            }
         }
+        this.refresh();
     }
-    prune() {
-        const windowMs = this.cfg().get('windowSeconds', 10) * 1000;
-        const cutoff = Date.now() - windowMs;
-        // Binary search would be faster but the array is tiny in practice
+    pruneTimes(arr) {
+        const cutoff = Date.now() - this.cfg().get('windowSeconds', 10) * 1000;
         let i = 0;
-        while (i < this.keystrokeTimes.length && this.keystrokeTimes[i] < cutoff) {
+        while (i < arr.length && arr[i] < cutoff)
             i++;
-        }
-        if (i > 0) {
-            this.keystrokeTimes.splice(0, i);
-        }
+        if (i > 0)
+            arr.splice(0, i);
     }
-    wpm() {
-        this.prune();
+    isIdle() {
         const idleMs = this.cfg().get('idleResetSeconds', 5) * 1000;
-        if (this.lastKeystrokeAt && Date.now() - this.lastKeystrokeAt > idleMs) {
-            this.keystrokeTimes = [];
+        return this.lastActivity > 0 && Date.now() - this.lastActivity > idleMs;
+    }
+    currentWpm() {
+        if (this.isIdle()) {
+            // Clear sliding window but leave session avg intact
+            this.wordTimes = [];
+            this.pendingWord = false;
             return 0;
         }
-        const windowMinutes = this.cfg().get('windowSeconds', 10) / 60;
-        return Math.round(this.keystrokeTimes.length / CHARS_PER_WORD / windowMinutes);
+        this.pruneTimes(this.wordTimes);
+        if (this.wordTimes.length === 0)
+            return 0;
+        const windowMin = this.cfg().get('windowSeconds', 10) / 60;
+        return Math.round(this.wordTimes.length / windowMin);
     }
-    cpm() {
-        this.prune();
-        const idleMs = this.cfg().get('idleResetSeconds', 5) * 1000;
-        if (this.lastKeystrokeAt && Date.now() - this.lastKeystrokeAt > idleMs) {
+    currentCpm() {
+        if (this.isIdle()) {
+            this.charTimes = [];
             return 0;
         }
-        const windowMinutes = this.cfg().get('windowSeconds', 10) / 60;
-        return Math.round(this.keystrokeTimes.length / windowMinutes);
+        this.pruneTimes(this.charTimes);
+        if (this.charTimes.length === 0)
+            return 0;
+        const windowMin = this.cfg().get('windowSeconds', 10) / 60;
+        return Math.round(this.charTimes.length / windowMin);
+    }
+    // Session average: total words ÷ time from first to last word (excludes idle gaps)
+    avgWpm() {
+        if (this.sessionWords < 2 || this.sessionStart === 0)
+            return 0;
+        const elapsedMin = (this.lastWordTime - this.sessionStart) / 60000;
+        if (elapsedMin < 0.017)
+            return 0; // span < ~1 s, too short to be meaningful
+        return Math.round(this.sessionWords / elapsedMin);
     }
     refresh() {
-        if (!this.visible) {
+        if (!this.visible)
             return;
-        }
         const showCpm = this.cfg().get('showCharactersPerMinute', false);
-        const speed = showCpm ? this.cpm() : this.wpm();
-        const unit = showCpm ? 'CPM' : 'WPM';
-        if (speed === 0) {
-            this.statusBar.text = `$(keyboard) — ${unit}`;
-            this.statusBar.color = undefined;
+        const avg = this.avgWpm();
+        if (showCpm) {
+            const cpm = this.currentCpm();
+            const wpmEq = Math.round(cpm / 5);
+            if (cpm === 0 && avg === 0) {
+                this.statusBar.text = `$(keyboard) — CPM`;
+                this.statusBar.color = undefined;
+            }
+            else {
+                const avgStr = avg > 0 ? `  avg ${avg} WPM` : '';
+                this.statusBar.text = `${this.speedIcon(wpmEq)} ${cpm} CPM${avgStr}`;
+                this.statusBar.color = this.speedColor(wpmEq);
+            }
         }
         else {
-            const icon = this.speedIcon(speed, showCpm);
-            this.statusBar.text = `${icon} ${speed} ${unit}`;
-            this.statusBar.color = this.speedColor(speed, showCpm);
+            const wpm = this.currentWpm();
+            if (wpm === 0 && avg === 0) {
+                this.statusBar.text = `$(keyboard) — WPM`;
+                this.statusBar.color = undefined;
+            }
+            else if (wpm > 0 && avg > 0) {
+                this.statusBar.text = `${this.speedIcon(wpm)} ${wpm} WPM  avg ${avg}`;
+                this.statusBar.color = this.speedColor(wpm);
+            }
+            else if (wpm > 0) {
+                this.statusBar.text = `${this.speedIcon(wpm)} ${wpm} WPM`;
+                this.statusBar.color = this.speedColor(wpm);
+            }
+            else {
+                // Idle after some typing — show avg as a reminder
+                this.statusBar.text = `$(keyboard) — WPM  avg ${avg}`;
+                this.statusBar.color = undefined;
+            }
         }
     }
-    // Returns a thematic icon based on speed tier
-    speedIcon(speed, isCpm) {
-        const wpm = isCpm ? speed / CHARS_PER_WORD : speed;
-        if (wpm >= 80) {
+    speedIcon(wpm) {
+        if (wpm >= 80)
             return '$(zap)';
-        }
-        if (wpm >= 50) {
+        if (wpm >= 50)
             return '$(rocket)';
-        }
-        if (wpm >= 20) {
+        if (wpm >= 20)
             return '$(keyboard)';
-        }
         return '$(edit)';
     }
-    // Subtle colour feedback: grey → white → yellow → orange
-    speedColor(speed, isCpm) {
-        const wpm = isCpm ? speed / CHARS_PER_WORD : speed;
-        if (wpm >= 80) {
+    speedColor(wpm) {
+        if (wpm >= 80)
             return '#ff9500';
-        } // fast  → orange
-        if (wpm >= 50) {
+        if (wpm >= 50)
             return '#ffe066';
-        } // good  → yellow
-        if (wpm >= 20) {
+        if (wpm >= 20)
             return undefined;
-        } // normal → theme default
-        return '#888888'; // slow  → grey
+        return '#888888';
     }
     reset() {
-        this.keystrokeTimes = [];
-        this.lastKeystrokeAt = 0;
+        this.charTimes = [];
+        this.wordTimes = [];
+        this.pendingWord = false;
+        this.sessionWords = 0;
+        this.sessionStart = 0;
+        this.lastWordTime = 0;
+        this.lastActivity = 0;
         this.refresh();
     }
     toggle() {
