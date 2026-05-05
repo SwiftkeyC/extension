@@ -1,0 +1,60 @@
+{
+  "name": "live-wpm-counting",
+  "displayName": "Live WPM counting",
+  "description": "Live WPM counter shown in the top-right status bar while you code",
+  "version": "1.0.0",
+  "publisher": "SwiftkeyC",
+  "icon": "keyboardicon.jpg",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "typingSpeedMeter.reset",
+        "title": "Typing Speed Meter: Reset"
+      },
+      {
+        "command": "typingSpeedMeter.toggle",
+        "title": "Typing Speed Meter: Toggle Visibility"
+      }
+    ],
+    "configuration": {
+      "title": "Typing Speed Meter",
+      "properties": {
+        "typingSpeedMeter.windowSeconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 3,
+          "maximum": 60,
+          "description": "Sliding window in seconds used to calculate WPM"
+        },
+        "typingSpeedMeter.idleResetSeconds": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 30,
+          "description": "Seconds of idle time before WPM resets to 0"
+        },
+        "typingSpeedMeter.showCharactersPerMinute": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show CPM instead of WPM"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}
