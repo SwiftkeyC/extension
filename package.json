@@ -4,6 +4,7 @@
   "description": "Live WPM counter shown in the top-right status bar while you code",
   "version": "1.0.0",
   "publisher": "SwiftkeyC",
+  "userId": "3fa57ca2-baad-60b5-a30c-2e84d9093463",
   "icon": "keyboardicon.jpg",
   "engines": {
     "vscode": "^1.85.0"
