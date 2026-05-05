@@ -2,7 +2,7 @@
   "name": "live-wpm-counting",
   "displayName": "Live WPM counting",
   "description": "Live WPM counter shown in the top-right status bar while you code",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "publisher": "SwiftkeyC",
   "userId": "3fa57ca2-baad-60b5-a30c-2e84d9093463",
   "icon": "keyboardicon.jpg",
