@@ -178,6 +178,8 @@ class TypingSpeedMeter implements vscode.Disposable {
     }
 
     private speedIcon(wpm: number): string {
+        if (wpm >= 100) return '$(star-full)';
+        if (wpm >= 90) return '$(flame)';
         if (wpm >= 80) return '$(zap)';
         if (wpm >= 50) return '$(rocket)';
         if (wpm >= 20) return '$(keyboard)';
@@ -185,6 +187,8 @@ class TypingSpeedMeter implements vscode.Disposable {
     }
 
     private speedColor(wpm: number): vscode.ThemeColor | string | undefined {
+        if (wpm >= 100) return '#ffffff';
+        if (wpm >= 90) return '#b57bee';
         if (wpm >= 80) return '#ff9500';
         if (wpm >= 50) return '#ffe066';
         if (wpm >= 20) return undefined;

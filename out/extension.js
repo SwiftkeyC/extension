@@ -167,6 +167,10 @@ class TypingSpeedMeter {
         }
     }
     speedIcon(wpm) {
+        if (wpm >= 100)
+            return '$(star-full)';
+        if (wpm >= 90)
+            return '$(flame)';
         if (wpm >= 80)
             return '$(zap)';
         if (wpm >= 50)
@@ -176,6 +180,10 @@ class TypingSpeedMeter {
         return '$(edit)';
     }
     speedColor(wpm) {
+        if (wpm >= 100)
+            return '#ffffff';
+        if (wpm >= 90)
+            return '#b57bee';
         if (wpm >= 80)
             return '#ff9500';
         if (wpm >= 50)
