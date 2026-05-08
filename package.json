@@ -5,7 +5,7 @@
   "version": "1.0.2",
   "publisher": "SwiftkeyC",
   "userId": "3fa57ca2-baad-60b5-a30c-2e84d9093463",
-  "icon": "keyboardicon.jpg",
+  "icon": "keyboard-icon.jpg",
   "engines": {
     "vscode": "^1.85.0"
   },
