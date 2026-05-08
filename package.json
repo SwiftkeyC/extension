@@ -2,15 +2,19 @@
   "name": "live-wpm-counting",
   "displayName": "Live WPM counting",
   "description": "Live WPM counter shown in the top-right status bar while you code",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "publisher": "SwiftkeyC",
   "userId": "3fa57ca2-baad-60b5-a30c-2e84d9093463",
   "icon": "keyboard-icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
